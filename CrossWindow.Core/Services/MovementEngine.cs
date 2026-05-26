@@ -101,7 +101,22 @@ public sealed class MovementEngine
         bool okA = NativeSetWindowPos(windowA.Handle, aBoundsOnB);
         bool okB = NativeSetWindowPos(windowB.Handle, bBoundsOnA);
 
-        if (!okA && !okB) return SwapResult.Fail("SetWindowPos failed for both windows");
+        if (!okA && !okB)
+            return SwapResult.Fail("SetWindowPos failed for both windows");
+
+        if (!okA)
+        {
+            // B moved but A did not — attempt to restore B to its original position.
+            NativeSetWindowPos(windowB.Handle, windowB.Bounds);
+            return SwapResult.Fail("SetWindowPos failed for window A — swap rolled back");
+        }
+
+        if (!okB)
+        {
+            // A moved but B did not — attempt to restore A to its original position.
+            NativeSetWindowPos(windowA.Handle, windowA.Bounds);
+            return SwapResult.Fail("SetWindowPos failed for window B — swap rolled back");
+        }
 
         return SwapResult.Swapped(windowA, windowB, aBoundsOnB, bBoundsOnA);
     }
@@ -122,12 +137,14 @@ public sealed class MovementEngine
             if (m?.Handle == monitor.Handle)
             {
                 best = info;
-                return false; // stop — GetForegroundWindow ordering means first valid is topmost
+                return false; // stop — EnumWindows walks top-to-bottom Z-order; first match is topmost
             }
             return true;
         }
 
-        NativeMethods.EnumWindows(EnumWindowsCallback, IntPtr.Zero);
+        NativeMethods.EnumWindowsProc cb = EnumWindowsCallback;
+        NativeMethods.EnumWindows(cb, IntPtr.Zero);
+        GC.KeepAlive(cb);
         return best;
     }
 

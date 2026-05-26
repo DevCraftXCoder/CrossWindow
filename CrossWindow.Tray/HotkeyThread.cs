@@ -12,10 +12,16 @@ public sealed class HotkeyThread : IDisposable
     private readonly MovementEngine _engine;
     private Thread?                 _thread;
     private volatile HotkeyListener? _listener;
-    private bool                    _disposed;
+    private volatile bool           _disposed;
+    // Plain int — memory ordering is enforced explicitly via Volatile.Read/Write at
+    // every cross-thread access point. Marking it volatile would cause CS0420 when
+    // passed by ref to Volatile.Read/Write (the ref strips the volatile qualifier).
     private int                     _lastRegisteredCount;
 
-    public bool IsRunning { get; private set; }
+    // Volatile backing field so cross-thread reads (WPF dispatcher ↔ pump thread)
+    // always see the latest write without a memory barrier.
+    private volatile bool _isRunning;
+    public bool IsRunning => _isRunning;
 
     /// <summary>
     /// Relayed from HotkeyListener — fires on the pump thread. Payload is the new swap mode state.
@@ -34,17 +40,21 @@ public sealed class HotkeyThread : IDisposable
     /// </summary>
     public int Start()
     {
-        if (IsRunning) Stop();
+        if (_isRunning) Stop();
 
         var bindings = HotkeyConfig.Load();
-        var ready    = new ManualResetEventSlim(false);
+        // Use ManualResetEventSlim in a using block so it is always disposed
+        // even if the pump thread throws before signalling.
+        using var ready = new ManualResetEventSlim(false);
 
         _thread = new Thread(() =>
         {
             _listener = new HotkeyListener(_engine);
             _listener.SwapModeChanged += active => SwapModeChanged?.Invoke(active);
             _listener.Register(bindings);
-            _lastRegisteredCount = _listener.RegisteredCount;
+            // Volatile write — ensures the caller's Volatile.Read below sees the
+            // updated count without a torn read.
+            Volatile.Write(ref _lastRegisteredCount, _listener.RegisteredCount);
             ready.Set();
             _listener.Run();
             _listener.Dispose();
@@ -58,8 +68,8 @@ public sealed class HotkeyThread : IDisposable
 
         _thread.Start();
         ready.Wait(TimeSpan.FromSeconds(3));
-        IsRunning = true;
-        return _lastRegisteredCount;
+        _isRunning = true;
+        return Volatile.Read(ref _lastRegisteredCount);
     }
 
     /// <summary>
@@ -67,11 +77,13 @@ public sealed class HotkeyThread : IDisposable
     /// </summary>
     public void Stop()
     {
-        if (!IsRunning) return;
+        if (!_isRunning) return;
         _listener?.Stop();
-        _thread?.Join(TimeSpan.FromSeconds(2));
-        _thread   = null;
-        IsRunning = false;
+        bool exited = _thread?.Join(TimeSpan.FromSeconds(2)) ?? true;
+        if (!exited)
+            Console.Error.WriteLine("[WARN] HotkeyThread: pump thread did not exit within 2 s — it will be abandoned.");
+        _thread    = null;
+        _isRunning = false;
     }
 
     public void Dispose()

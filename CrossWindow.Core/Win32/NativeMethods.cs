@@ -34,8 +34,9 @@ public static class NativeMethods
         public RECT rcMonitor;
         public RECT rcWork;
         public uint dwFlags;
+        // Nullable: GetMonitorInfo may leave this empty on certain virtual monitors.
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
-        public string szDevice;
+        public string? szDevice;
     }
 
     // ─── Delegates ────────────────────────────────────────────────────────────────

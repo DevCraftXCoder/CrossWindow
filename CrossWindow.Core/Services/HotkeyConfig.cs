@@ -111,12 +111,9 @@ public static class HotkeyConfig
 
     public static IReadOnlyList<HotkeyBinding> Load()
     {
-        var appDataPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "CrossWindow", FileName);
-
-        var exePath = Path.Combine(
-            AppContext.BaseDirectory, FileName);
+        // Use ConfigPath so path logic is not duplicated.
+        var appDataPath = ConfigPath;
+        var exePath     = Path.Combine(AppContext.BaseDirectory, FileName);
 
         if (File.Exists(appDataPath))
             return ParseFile(appDataPath) ?? Defaults;
@@ -124,7 +121,7 @@ public static class HotkeyConfig
         if (File.Exists(exePath))
             return ParseFile(exePath) ?? Defaults;
 
-        // Neither exists — write defaults to %APPDATA%\CrossWindow\ and return them
+        // Neither exists — write defaults to %APPDATA%\CrossWindow\ and return them.
         WriteDefaults(appDataPath);
         return Defaults;
     }
@@ -151,6 +148,18 @@ public static class HotkeyConfig
                 var actionStr = node["action"]?.GetValue<string>() ?? "Move";
                 var dirStr    = node["direction"]?.GetValue<string>() ?? "Right";
                 var zoneStr   = node["zone"]?.GetValue<string>();
+
+                // Skip malformed entries — id=0 and vk=0 are both invalid.
+                if (id == 0)
+                {
+                    Console.Error.WriteLine("[WARN] HotkeyConfig: skipping binding with missing or zero id");
+                    continue;
+                }
+                if (vk == 0)
+                {
+                    Console.Error.WriteLine($"[WARN] HotkeyConfig: skipping binding id={id} with missing or zero vk");
+                    continue;
+                }
 
                 var mods = ParseModifiers(modStr);
 

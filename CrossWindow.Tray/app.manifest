@@ -17,4 +17,11 @@
     </security>
   </trustInfo>
 
+  <!--
+    DPI awareness is configured via <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    in CrossWindow.Tray.csproj. For WPF + WinForms mixed projects, the SDK injects a
+    SetHighDpiMode(HighDpiMode.PerMonitorV2) call at startup — do NOT add dpiAware /
+    dpiAwareness elements here; the build system (WFAC010) rejects the duplication.
+  -->
+
 </assembly>
